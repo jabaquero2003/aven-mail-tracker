@@ -17,6 +17,7 @@ interface Result {
   firstName: string;
   lastName: string;
   company: string;
+  domain: string | null;
   email: string | null;
   confidence: number;
   allTried: number;
@@ -167,6 +168,7 @@ export default function FindByName() {
                 <tr>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Company</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Domain Detected</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Email</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Confidence</th>
                 </tr>
@@ -176,6 +178,7 @@ export default function FindByName() {
                   <tr key={i} className="hover:bg-gray-50/50">
                     <td className="px-4 py-3 font-medium text-gray-900">{r.firstName} {r.lastName}</td>
                     <td className="px-4 py-3 text-gray-600">{r.company}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-blue-600">{r.domain ?? <span className="text-gray-400 italic">Not detected</span>}</td>
                     <td className="px-4 py-3 font-mono text-gray-800">
                       {r.email ? (
                         <span className="text-green-700">{r.email}</span>

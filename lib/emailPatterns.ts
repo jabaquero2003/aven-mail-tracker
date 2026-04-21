@@ -26,7 +26,32 @@ export function generateEmailCombinations(
   return [...new Set(patterns)];
 }
 
+interface ClearbitCompany {
+  name: string;
+  domain: string;
+}
+
+async function findDomainViaClearbit(companyName: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://autocomplete.clearbit.com/v1/companies/suggest?query=${encodeURIComponent(companyName)}`,
+      { signal: AbortSignal.timeout(5000) }
+    );
+    if (!res.ok) return null;
+    const data: ClearbitCompany[] = await res.json();
+    if (data && data.length > 0) return data[0].domain;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export async function guessCompanyDomain(companyName: string): Promise<string | null> {
+  // Try Clearbit first — accurate company domain database, free, no API key
+  const clearbitDomain = await findDomainViaClearbit(companyName);
+  if (clearbitDomain) return clearbitDomain;
+
+  // Fallback: DNS MX guessing
   const cleaned = companyName
     .toLowerCase()
     .replace(/\b(inc|llc|ltd|corp|co|company|the|group|and|&)\b/gi, "")
@@ -44,10 +69,9 @@ export async function guessCompanyDomain(companyName: string): Promise<string | 
   ];
 
   const { checkMx } = await import("./dnsCheck");
-  const resolveMx = (host: string): Promise<boolean> => checkMx(host);
 
   for (const candidate of candidates) {
-    const valid = await resolveMx(candidate);
+    const valid = await checkMx(candidate);
     if (valid) return candidate;
   }
 

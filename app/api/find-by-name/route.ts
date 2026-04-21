@@ -16,6 +16,7 @@ export interface FindByNameResult {
   firstName: string;
   lastName: string;
   company: string;
+  domain: string | null;
   email: string | null;
   confidence: number;
   allTried: number;
@@ -47,13 +48,13 @@ export async function POST(req: NextRequest) {
   for (const contact of contacts) {
     const { firstName, lastName, company, domain: manualDomain } = contact;
     if (!firstName || !lastName || !company) {
-      results.push({ firstName, lastName, company, email: null, confidence: 0, allTried: 0 });
+      results.push({ firstName, lastName, company, domain: null, email: null, confidence: 0, allTried: 0 });
       continue;
     }
 
     const domain = manualDomain || (await guessCompanyDomain(company));
     if (!domain) {
-      results.push({ firstName, lastName, company, email: null, confidence: 0, allTried: 0 });
+      results.push({ firstName, lastName, company, domain: null, email: null, confidence: 0, allTried: 0 });
       continue;
     }
 
@@ -101,6 +102,7 @@ export async function POST(req: NextRequest) {
       firstName,
       lastName,
       company,
+      domain,
       email: bestEmail,
       confidence: bestConfidence,
       allTried: tried,
