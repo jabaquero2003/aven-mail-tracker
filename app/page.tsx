@@ -106,11 +106,11 @@ export default function Home() {
             ))}
           </div>
 
-          {/* Tab content */}
+          {/* Tab content — all tabs stay mounted to preserve state */}
           <div className="p-6">
-            {activeTab === "find-by-name" && <FindByName />}
-            {activeTab === "find-by-role" && <FindByRole />}
-            {activeTab === "bulk-validator" && <BulkValidator />}
+            <div className={activeTab === "find-by-name" ? "" : "hidden"}><FindByName /></div>
+            <div className={activeTab === "find-by-role" ? "" : "hidden"}><FindByRole /></div>
+            <div className={activeTab === "bulk-validator" ? "" : "hidden"}><BulkValidator /></div>
           </div>
         </div>
 

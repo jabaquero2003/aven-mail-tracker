@@ -60,19 +60,41 @@ export async function POST(req: NextRequest) {
     const combos = generateEmailCombinations(firstName, lastName, domain);
     let bestEmail: string | null = null;
     let bestConfidence = 0;
+    let tried = 0;
 
-    for (const email of combos) {
-      const result = await validateEmail(email);
-      if (result.status === "valid" && result.confidence > bestConfidence) {
-        bestEmail = email;
+    // Validate top 5 combinations in parallel first
+    const topCombos = combos.slice(0, 5);
+    const topResults = await Promise.all(topCombos.map((e) => validateEmail(e)));
+    tried += topCombos.length;
+
+    for (let i = 0; i < topResults.length; i++) {
+      const result = topResults[i];
+      if (result.status === "valid") {
+        bestEmail = topCombos[i];
         bestConfidence = result.confidence;
         break;
       }
-      if (result.status === "risky" && bestConfidence < 55) {
-        bestEmail = email;
+      if (result.status === "risky" && result.confidence > bestConfidence) {
+        bestEmail = topCombos[i];
         bestConfidence = result.confidence;
       }
-      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    // If not found yet, try remaining combinations one by one
+    if (!bestEmail || bestConfidence < 100) {
+      for (const email of combos.slice(5)) {
+        const result = await validateEmail(email);
+        tried++;
+        if (result.status === "valid") {
+          bestEmail = email;
+          bestConfidence = result.confidence;
+          break;
+        }
+        if (result.status === "risky" && result.confidence > bestConfidence) {
+          bestEmail = email;
+          bestConfidence = result.confidence;
+        }
+      }
     }
 
     results.push({
@@ -81,7 +103,7 @@ export async function POST(req: NextRequest) {
       company,
       email: bestEmail,
       confidence: bestConfidence,
-      allTried: combos.length,
+      allTried: tried,
     });
   }
 
