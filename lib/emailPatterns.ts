@@ -43,11 +43,8 @@ export async function guessCompanyDomain(companyName: string): Promise<string | 
     `${cleaned}.org`,
   ];
 
-  const dns = await import("dns");
-  const resolveMx = (host: string): Promise<boolean> =>
-    new Promise((resolve) => {
-      dns.resolveMx(host, (err, addrs) => resolve(!err && addrs.length > 0));
-    });
+  const { checkMx } = await import("./dnsCheck");
+  const resolveMx = (host: string): Promise<boolean> => checkMx(host);
 
   for (const candidate of candidates) {
     const valid = await resolveMx(candidate);
