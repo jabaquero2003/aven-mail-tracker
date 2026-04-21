@@ -60,17 +60,17 @@ export async function validateEmail(email: string): Promise<ValidationResult> {
     let status: ValidationResult["status"];
 
     if (reoon.is_safe_to_send || reoon.status === "safe" || reoon.status === "valid") {
-      confidence = reoon.overall_score ?? 95;
+      confidence = 100;
       status = "valid";
     } else if (reoon.status === "invalid" || reoon.status === "dangerous" || !reoon.mx_accepts_mail) {
-      confidence = reoon.overall_score ?? 5;
+      confidence = 0;
       status = "invalid";
     } else if (reoon.is_catch_all) {
-      confidence = 50;
+      confidence = 70;
       status = "risky";
     } else {
-      confidence = reoon.overall_score ?? 40;
-      status = "risky";
+      confidence = 0;
+      status = "invalid";
     }
 
     return { email: trimmed, syntax, mxValid, smtpValid, confidence, status };
