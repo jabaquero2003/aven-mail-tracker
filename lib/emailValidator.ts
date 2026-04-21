@@ -18,10 +18,12 @@ interface ReoonResponse {
   status: string;
   is_valid_syntax: boolean;
   mx_accepts_mail: boolean;
-  is_catchall: boolean;
+  is_catch_all: boolean;
   is_deliverable: boolean;
+  is_safe_to_send: boolean;
   can_connect_smtp: boolean;
   is_disposable: boolean;
+  overall_score: number;
 }
 
 async function verifyWithReoon(email: string): Promise<ReoonResponse | null> {
@@ -30,8 +32,8 @@ async function verifyWithReoon(email: string): Promise<ReoonResponse | null> {
 
   try {
     const res = await fetch(
-      `https://emailverifier.reoon.com/api/v1/verify?email=${encodeURIComponent(email)}&key=${apiKey}&mode=quick`,
-      { signal: AbortSignal.timeout(10000) }
+      `https://emailverifier.reoon.com/api/v1/verify?email=${encodeURIComponent(email)}&key=${apiKey}&mode=power`,
+      { signal: AbortSignal.timeout(15000) }
     );
     if (!res.ok) return null;
     return await res.json();
@@ -57,17 +59,17 @@ export async function validateEmail(email: string): Promise<ValidationResult> {
     let confidence: number;
     let status: ValidationResult["status"];
 
-    if (reoon.status === "valid" && reoon.is_deliverable) {
-      confidence = 95;
+    if (reoon.is_safe_to_send || reoon.status === "safe" || reoon.status === "valid") {
+      confidence = reoon.overall_score ?? 95;
       status = "valid";
-    } else if (reoon.status === "invalid" || (!reoon.mx_accepts_mail)) {
-      confidence = 5;
+    } else if (reoon.status === "invalid" || reoon.status === "dangerous" || !reoon.mx_accepts_mail) {
+      confidence = reoon.overall_score ?? 5;
       status = "invalid";
-    } else if (reoon.is_catchall) {
+    } else if (reoon.is_catch_all) {
       confidence = 50;
       status = "risky";
     } else {
-      confidence = 60;
+      confidence = reoon.overall_score ?? 40;
       status = "risky";
     }
 
