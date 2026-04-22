@@ -5,26 +5,31 @@ import ProgressBar from "./ProgressBar";
 import ConfidenceBadge from "./ConfidenceBadge";
 import ExportButton from "./ExportButton";
 
-const DEPARTMENTS = ["HR", "Finance", "IT", "Marketing", "Sales", "Recruiting"];
+const DEPARTMENTS = ["HR", "Finance", "IT", "Marketing", "Sales", "Recruiting", "Legal", "Operations", "Executive", "Support"];
 
-interface Result {
-  name: string;
-  role: string;
-  department: string;
-  email: string | null;
+interface FoundEmail {
+  email: string;
   confidence: number;
+  status: string;
+}
+
+interface RoleResult {
+  domain: string;
+  department: string;
   company: string;
+  found: FoundEmail[];
+  notFound: string[];
+  total: number;
 }
 
 export default function FindByRole() {
   const [company, setCompany] = useState("");
   const [department, setDepartment] = useState("HR");
   const [domain, setDomain] = useState("");
-  const [results, setResults] = useState<Result[]>([]);
+  const [result, setResult] = useState<RoleResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
-  const [foundDomain, setFoundDomain] = useState("");
 
   const handleSubmit = async () => {
     if (!company.trim()) {
@@ -34,7 +39,7 @@ export default function FindByRole() {
     setError("");
     setLoading(true);
     setProgress(20);
-    setResults([]);
+    setResult(null);
 
     try {
       const res = await fetch("/api/find-by-role", {
@@ -47,8 +52,7 @@ export default function FindByRole() {
       if (!res.ok) {
         setError(data.error || "Request failed.");
       } else {
-        setResults(data.results ?? []);
-        setFoundDomain(data.domain ?? "");
+        setResult(data);
       }
     } catch {
       setError("Request failed. Check your connection.");
@@ -58,17 +62,25 @@ export default function FindByRole() {
     setLoading(false);
   };
 
-  const exportData = results.map((r) => ({
-    Name: r.name,
-    Role: r.role,
-    Department: r.department,
-    Email: r.email ?? "Not found",
+  const exportData = result?.found.map((r) => ({
+    Email: r.email,
+    Department: result.department,
+    Company: result.company,
+    Domain: result.domain,
+    Status: r.status,
     "Confidence %": r.confidence,
-    Company: r.company,
-  }));
+  })) ?? [];
 
   return (
     <div className="space-y-6">
+      {/* Info banner */}
+      <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-xs text-gray-500 leading-relaxed">
+        <strong className="text-gray-700">How it works:</strong> Aven finds the real department inbox for a company
+        (e.g. <code className="bg-white px-1 rounded border border-gray-200">hr@company.com</code>,{" "}
+        <code className="bg-white px-1 rounded border border-gray-200">recruiting@company.com</code>).
+        These are verified real addresses — great for reaching teams directly.
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Company Name</label>
@@ -76,6 +88,7 @@ export default function FindByRole() {
             type="text"
             value={company}
             onChange={(e) => setCompany(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
             placeholder="e.g. Stripe"
             className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-gray-400"
           />
@@ -96,7 +109,7 @@ export default function FindByRole() {
 
       <div>
         <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
-          Domain Override <span className="text-gray-400 font-normal normal-case">(optional — leave blank to auto-detect)</span>
+          Domain <span className="text-gray-400 font-normal normal-case">(optional — auto-detected via Clearbit)</span>
         </label>
         <input
           type="text"
@@ -114,50 +127,61 @@ export default function FindByRole() {
         disabled={loading}
         className="w-full bg-black text-white py-2.5 rounded-xl font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
-        {loading ? "Searching…" : "Find Contacts"}
+        {loading ? "Searching…" : "Find Department Emails"}
       </button>
 
-      {loading && <ProgressBar progress={progress} label="Searching and validating contacts…" />}
+      {loading && <ProgressBar progress={progress} label="Detecting domain and verifying department emails…" />}
 
-      {results.length > 0 && (
-        <div className="space-y-3">
+      {result && (
+        <div className="space-y-4">
+          {/* Summary */}
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-gray-900">{department} contacts at {company}</h3>
-              {foundDomain && <p className="text-xs text-gray-400">Domain: {foundDomain}</p>}
+              <h3 className="text-sm font-semibold text-gray-900">
+                {result.department} @ {result.company}
+              </h3>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Domain detected: <span className="text-blue-600 font-mono">{result.domain}</span>
+                {" · "}{result.found.length} email{result.found.length !== 1 ? "s" : ""} found out of {result.total} checked
+              </p>
             </div>
-            <ExportButton data={exportData} filename="aven-find-by-role" />
+            <ExportButton data={exportData} filename="aven-find-by-role" disabled={exportData.length === 0} />
           </div>
-          <div className="overflow-x-auto rounded-xl border border-gray-100">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-100">
-                <tr>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Role</th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Email</th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Confidence</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {results.map((r, i) => (
-                  <tr key={i} className="hover:bg-gray-50/50">
-                    <td className="px-4 py-3 font-medium text-gray-900">{r.name}</td>
-                    <td className="px-4 py-3 text-gray-600">{r.role}</td>
-                    <td className="px-4 py-3 font-mono text-gray-800">
-                      {r.email ? (
-                        <span className="text-green-700">{r.email}</span>
-                      ) : (
-                        <span className="text-gray-400 italic">Not found</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      {r.email ? <ConfidenceBadge score={r.confidence} /> : <span className="text-gray-400">—</span>}
-                    </td>
+
+          {result.found.length > 0 ? (
+            <div className="overflow-x-auto rounded-xl border border-gray-100">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Email</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Type</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Confidence</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {result.found.map((r, i) => (
+                    <tr key={i} className="hover:bg-gray-50/50">
+                      <td className="px-4 py-3 font-mono text-green-700">{r.email}</td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                          Department inbox
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <ConfidenceBadge score={r.confidence} status={r.status} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-400 text-sm border border-dashed border-gray-200 rounded-xl">
+              No department emails found for <strong>{result.department}</strong> at <strong>{result.company}</strong>.
+              <br />
+              <span className="text-xs mt-1 block">Try a different department or override the domain manually.</span>
+            </div>
+          )}
         </div>
       )}
     </div>

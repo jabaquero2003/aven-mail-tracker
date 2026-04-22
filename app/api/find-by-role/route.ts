@@ -5,31 +5,17 @@ import { rateLimit } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 
-const ROLE_PATTERNS: Record<string, { titles: string[]; names: string[][] }> = {
-  HR: {
-    titles: ["HR Manager", "HR Director", "People Operations", "Talent Acquisition", "Human Resources"],
-    names: [["sarah", "johnson"], ["jennifer", "smith"], ["michael", "brown"], ["lisa", "davis"], ["emily", "wilson"]],
-  },
-  Finance: {
-    titles: ["CFO", "Finance Manager", "Controller", "Finance Director", "Accounting Manager"],
-    names: [["david", "miller"], ["robert", "taylor"], ["james", "anderson"], ["patricia", "thomas"], ["linda", "jackson"]],
-  },
-  IT: {
-    titles: ["CTO", "IT Manager", "VP Engineering", "Head of Technology", "IT Director"],
-    names: [["john", "martin"], ["christopher", "garcia"], ["matthew", "martinez"], ["andrew", "robinson"], ["daniel", "clark"]],
-  },
-  Marketing: {
-    titles: ["CMO", "Marketing Manager", "VP Marketing", "Head of Marketing", "Digital Marketing Manager"],
-    names: [["jessica", "rodriguez"], ["ashley", "lewis"], ["megan", "lee"], ["stephanie", "walker"], ["nicole", "hall"]],
-  },
-  Sales: {
-    titles: ["VP Sales", "Sales Director", "Head of Sales", "Account Executive", "Sales Manager"],
-    names: [["william", "allen"], ["richard", "young"], ["joseph", "hernandez"], ["charles", "king"], ["thomas", "wright"]],
-  },
-  Recruiting: {
-    titles: ["Head of Recruiting", "Talent Acquisition Manager", "Recruiter", "Technical Recruiter", "Recruiting Director"],
-    names: [["amanda", "scott"], ["heather", "green"], ["kimberly", "adams"], ["tamara", "baker"], ["rachel", "gonzalez"]],
-  },
+const DEPARTMENT_PATTERNS: Record<string, string[]> = {
+  HR: ["hr", "humanresources", "human-resources", "recruiting", "talent", "people", "careers", "jobs"],
+  Finance: ["finance", "accounting", "cfo", "treasury", "billing", "accounts", "payments"],
+  IT: ["it", "tech", "engineering", "cto", "helpdesk", "support", "devops", "infrastructure"],
+  Marketing: ["marketing", "brand", "comms", "communications", "media", "press", "pr", "growth"],
+  Sales: ["sales", "bizdev", "biz-dev", "business", "partnerships", "revenue", "deals"],
+  Recruiting: ["recruiting", "talent", "hr", "careers", "jobs", "hiring", "recruitment"],
+  Legal: ["legal", "compliance", "privacy", "contracts", "counsel", "law"],
+  Operations: ["ops", "operations", "admin", "office", "facilities"],
+  Executive: ["ceo", "coo", "president", "executive", "leadership", "management", "info", "contact", "hello"],
+  Support: ["support", "help", "customer", "service", "cs", "care", "success"],
 };
 
 export async function POST(req: NextRequest) {
@@ -55,45 +41,42 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Could not resolve company domain" }, { status: 400 });
   }
 
-  const deptKey = Object.keys(ROLE_PATTERNS).find(
+  const deptKey = Object.keys(DEPARTMENT_PATTERNS).find(
     (k) => k.toLowerCase() === department.toLowerCase()
-  ) || "HR";
-  const pattern = ROLE_PATTERNS[deptKey];
+  ) ?? "HR";
 
+  const prefixes = DEPARTMENT_PATTERNS[deptKey];
+  const candidates = prefixes.map((p) => `${p}@${domain}`);
+
+  // Validate all candidates in parallel batches of 4
   const results = [];
+  const batchSize = 4;
 
-  for (let i = 0; i < pattern.names.length; i++) {
-    const [first, last] = pattern.names[i];
-    const title = pattern.titles[i % pattern.titles.length];
-
-    const emailCandidates = [
-      `${first}.${last}@${domain}`,
-      `${first[0]}${last}@${domain}`,
-      `${first}@${domain}`,
-    ];
-
-    let validEmail: string | null = null;
-    let confidence = 0;
-
-    for (const email of emailCandidates) {
-      const r = await validateEmail(email);
-      if (r.status === "valid" || r.status === "risky") {
-        validEmail = email;
-        confidence = r.confidence;
-        break;
-      }
-      await new Promise((res) => setTimeout(res, 150));
-    }
-
-    results.push({
-      name: `${first.charAt(0).toUpperCase() + first.slice(1)} ${last.charAt(0).toUpperCase() + last.slice(1)}`,
-      role: title,
-      department: deptKey,
-      email: validEmail,
-      confidence,
-      company,
-    });
+  for (let i = 0; i < candidates.length; i += batchSize) {
+    const batch = candidates.slice(i, i + batchSize);
+    const batchResults = await Promise.all(
+      batch.map(async (email) => {
+        const validation = await validateEmail(email);
+        return { email, ...validation };
+      })
+    );
+    results.push(...batchResults);
   }
 
-  return NextResponse.json({ results, domain });
+  const found = results
+    .filter((r) => r.status === "valid" || r.status === "risky")
+    .sort((a, b) => b.confidence - a.confidence);
+
+  const notFound = results
+    .filter((r) => r.status === "invalid")
+    .map((r) => r.email);
+
+  return NextResponse.json({
+    domain,
+    department: deptKey,
+    company,
+    found,
+    notFound,
+    total: candidates.length,
+  });
 }
