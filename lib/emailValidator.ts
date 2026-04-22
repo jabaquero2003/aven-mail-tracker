@@ -42,6 +42,20 @@ interface DisifyResponse {
   whitelist: boolean;
 }
 
+interface AbstractResponse {
+  email_deliverability: {
+    status: string;
+    is_format_valid: boolean;
+    is_smtp_valid: boolean;
+    is_mx_valid: boolean;
+  };
+  email_quality: {
+    score: number;
+    is_disposable: boolean;
+    is_catchall: boolean;
+  };
+}
+
 async function verifyWithReoon(email: string): Promise<ReoonResponse | null> {
   const apiKey = process.env.REOON_API_KEY;
   if (!apiKey) return null;
@@ -55,6 +69,24 @@ async function verifyWithReoon(email: string): Promise<ReoonResponse | null> {
     const data: ReoonResponse = await res.json();
     // Reoon returns error objects when credits are exhausted
     if (!data.email) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+async function verifyWithAbstract(email: string): Promise<AbstractResponse | null> {
+  const apiKey = process.env.ABSTRACT_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const res = await fetch(
+      `https://emailreputation.abstractapi.com/v1/?api_key=${apiKey}&email=${encodeURIComponent(email)}`,
+      { signal: AbortSignal.timeout(15000) }
+    );
+    if (!res.ok) return null;
+    const data: AbstractResponse = await res.json();
+    if (!data.email_deliverability) return null;
     return data;
   } catch {
     return null;
@@ -122,7 +154,33 @@ export async function validateEmail(email: string): Promise<ValidationResult> {
     return { email: trimmed, syntax, mxValid, smtpValid, confidence, status };
   }
 
-  // Tier 2: MailCheck.ai + Disify — no API key, unlimited, DNS-level
+  // Tier 2: Abstract API — SMTP verification (100/month)
+  const abstract = await verifyWithAbstract(trimmed);
+
+  if (abstract) {
+    const { is_mx_valid, is_smtp_valid, status } = abstract.email_deliverability;
+    const { is_disposable, is_catchall } = abstract.email_quality;
+
+    if (!is_mx_valid || is_disposable) {
+      return { email: trimmed, syntax, mxValid: is_mx_valid, smtpValid: false, confidence: 0, status: "invalid" };
+    }
+
+    if (status === "deliverable" && is_smtp_valid) {
+      return { email: trimmed, syntax, mxValid: true, smtpValid: true, confidence: 100, status: "valid" };
+    }
+
+    if (status === "undeliverable") {
+      return { email: trimmed, syntax, mxValid: is_mx_valid, smtpValid: false, confidence: 0, status: "invalid" };
+    }
+
+    if (is_catchall || status === "risky") {
+      return { email: trimmed, syntax, mxValid: true, smtpValid: null, confidence: 70, status: "risky" };
+    }
+
+    return { email: trimmed, syntax, mxValid: true, smtpValid: null, confidence: 60, status: "unknown" };
+  }
+
+  // Tier 3: MailCheck.ai + Disify — no API key, unlimited, DNS-level
   const [mailcheck, disify] = await Promise.all([
     verifyWithMailCheck(trimmed),
     verifyWithDisify(trimmed),
