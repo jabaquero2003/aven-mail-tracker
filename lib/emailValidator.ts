@@ -26,6 +26,22 @@ interface ReoonResponse {
   overall_score: number;
 }
 
+interface MailCheckResponse {
+  status: number;
+  mx: boolean;
+  disposable: boolean;
+  relay_domain: boolean;
+  public_domain: boolean;
+  spam: boolean;
+}
+
+interface DisifyResponse {
+  format: boolean;
+  dns: boolean;
+  disposable: boolean;
+  whitelist: boolean;
+}
+
 async function verifyWithReoon(email: string): Promise<ReoonResponse | null> {
   const apiKey = process.env.REOON_API_KEY;
   if (!apiKey) return null;
@@ -34,6 +50,35 @@ async function verifyWithReoon(email: string): Promise<ReoonResponse | null> {
     const res = await fetch(
       `https://emailverifier.reoon.com/api/v1/verify?email=${encodeURIComponent(email)}&key=${apiKey}&mode=power`,
       { signal: AbortSignal.timeout(15000) }
+    );
+    if (!res.ok) return null;
+    const data: ReoonResponse = await res.json();
+    // Reoon returns error objects when credits are exhausted
+    if (!data.email) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+async function verifyWithMailCheck(email: string): Promise<MailCheckResponse | null> {
+  try {
+    const res = await fetch(
+      `https://api.mailcheck.ai/email/${encodeURIComponent(email)}`,
+      { signal: AbortSignal.timeout(10000) }
+    );
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+async function verifyWithDisify(email: string): Promise<DisifyResponse | null> {
+  try {
+    const res = await fetch(
+      `https://disify.com/api/email/${encodeURIComponent(email)}`,
+      { signal: AbortSignal.timeout(10000) }
     );
     if (!res.ok) return null;
     return await res.json();
@@ -50,6 +95,7 @@ export async function validateEmail(email: string): Promise<ValidationResult> {
     return { email: trimmed, syntax: false, mxValid: false, smtpValid: false, confidence: 0, status: "invalid" };
   }
 
+  // Tier 1: Reoon — full SMTP verification (600/month)
   const reoon = await verifyWithReoon(trimmed);
 
   if (reoon) {
@@ -76,7 +122,35 @@ export async function validateEmail(email: string): Promise<ValidationResult> {
     return { email: trimmed, syntax, mxValid, smtpValid, confidence, status };
   }
 
-  // Fallback: DNS-only if Reoon unavailable
+  // Tier 2: MailCheck.ai + Disify — no API key, unlimited, DNS-level
+  const [mailcheck, disify] = await Promise.all([
+    verifyWithMailCheck(trimmed),
+    verifyWithDisify(trimmed),
+  ]);
+
+  if (mailcheck || disify) {
+    const mxValid = mailcheck ? mailcheck.mx : (disify ? disify.dns : false);
+    const isDisposable = (mailcheck?.disposable || disify?.disposable) ?? false;
+    const isCatchAll = mailcheck?.relay_domain ?? false;
+    const isSpam = mailcheck?.spam ?? false;
+
+    if (!mxValid) {
+      return { email: trimmed, syntax, mxValid: false, smtpValid: false, confidence: 0, status: "invalid" };
+    }
+
+    if (isDisposable || isSpam) {
+      return { email: trimmed, syntax, mxValid, smtpValid: null, confidence: 0, status: "invalid" };
+    }
+
+    if (isCatchAll) {
+      return { email: trimmed, syntax, mxValid, smtpValid: null, confidence: 70, status: "risky" };
+    }
+
+    // Domain is valid, no red flags — honest score without SMTP
+    return { email: trimmed, syntax, mxValid, smtpValid: null, confidence: 60, status: "unknown" };
+  }
+
+  // Tier 3: Local DNS fallback
   const { checkMx } = await import("./dnsCheck");
   const mxValid = await checkMx(trimmed.split("@")[1]);
   return {
@@ -84,7 +158,7 @@ export async function validateEmail(email: string): Promise<ValidationResult> {
     syntax,
     mxValid,
     smtpValid: null,
-    confidence: mxValid ? 40 : 5,
+    confidence: mxValid ? 40 : 0,
     status: mxValid ? "unknown" : "invalid",
   };
 }
