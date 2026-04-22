@@ -82,7 +82,7 @@ async function verifyWithAbstract(email: string): Promise<AbstractResponse | nul
   try {
     const res = await fetch(
       `https://emailreputation.abstractapi.com/v1/?api_key=${apiKey}&email=${encodeURIComponent(email)}`,
-      { signal: AbortSignal.timeout(15000) }
+      { signal: AbortSignal.timeout(8000) }
     );
     if (!res.ok) return null;
     const data: AbstractResponse = await res.json();

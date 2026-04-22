@@ -3,6 +3,7 @@ import { validateEmail } from "@/lib/emailValidator";
 import { rateLimit } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for") ?? "anon";
