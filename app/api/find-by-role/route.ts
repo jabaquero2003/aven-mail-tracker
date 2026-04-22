@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
     const batchResults = await Promise.all(
       batch.map(async (email) => {
         const validation = await validateEmail(email);
-        return { email, ...validation };
+        return { ...validation, email };
       })
     );
     results.push(...batchResults);
